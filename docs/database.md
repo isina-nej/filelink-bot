@@ -10,7 +10,8 @@
 - `processed_updates`: unique update ids with `PROCESSING`, `FAILED`, and
   `COMPLETED` states for webhook idempotency and retry recovery.
 - `deliveries`: update reservations with `PENDING`/`SENT` state, unique update
-  keys, and delivery timestamps.
+  keys, delivery timestamps, and a derived delivery counter synchronized from
+  successful delivery rows before a delivery attempt.
 - `rate_limits`: a short per-user request window.
 
 Telegram Serverless migrations are explicit. `tgcloud push` uploads code and

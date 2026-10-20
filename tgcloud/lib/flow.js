@@ -10,7 +10,12 @@ export async function completeArchive(userId, fileId) {
   if (!claimed) throw new FileLinkError('INVALID_STATE', 'این عملیات قبلاً پردازش شده یا دیگر معتبر نیست.');
   try {
     const result = await archiveFile(claimed);
-    await finishSession(userId, fileId);
+    try {
+      await finishSession(userId, fileId);
+    } catch (error) {
+      // The archive is already active; keep the successful link usable.
+      console.error('session cleanup deferred after archive', error);
+    }
     return result;
   } catch (error) {
     await markArchiveFailedSession(userId, fileId);

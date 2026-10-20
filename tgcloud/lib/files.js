@@ -79,9 +79,27 @@ export async function recordDelivery(fileId, receiverChatId, updateId) {
   const rows = await db.insert(deliveries).values({ fileId, receiverChatId, updateId, state: 'SENT', deliveredAt: now(), sentAt: now() })
     .onConflictDoNothing().returning().run();
   if (rows.length) {
-    await db.update(files).set({ deliveryCount: sql`${files.deliveryCount} + 1`, lastDeliveredAt: now(), updatedAt: now() }).where(eq(files.id, fileId)).run();
+    try {
+      await db.update(files).set({ deliveryCount: sql`${files.deliveryCount} + 1`, lastDeliveredAt: now(), updatedAt: now() }).where(eq(files.id, fileId)).run();
+    } catch (error) {
+      console.error('delivery count pending reconciliation', error);
+    }
   }
   return rows.length > 0;
+}
+
+export async function releaseDelivery(fileId, updateId) {
+  if (!Number.isSafeInteger(updateId)) return false;
+  const rows = await db.delete(deliveries)
+    .where(and(eq(deliveries.fileId, fileId), eq(deliveries.updateId, updateId), eq(deliveries.state, 'PENDING')))
+    .returning().run();
+  return rows.length > 0;
+}
+
+export async function syncDeliveryCount(fileId) {
+  const count = await db.$count(deliveries, and(eq(deliveries.fileId, fileId), eq(deliveries.state, 'SENT')));
+  await db.update(files).set({ deliveryCount: count, updatedAt: now() }).where(eq(files.id, fileId)).run();
+  return count;
 }
 
 export async function reserveDelivery(fileId, receiverChatId, updateId) {
@@ -98,7 +116,11 @@ export async function completeDelivery(fileId, updateId) {
   const rows = await db.update(deliveries).set({ state: 'SENT', sentAt: timestamp, deliveredAt: timestamp })
     .where(and(eq(deliveries.fileId, fileId), eq(deliveries.updateId, updateId), eq(deliveries.state, 'PENDING'))).returning().run();
   if (rows.length) {
-    await db.update(files).set({ deliveryCount: sql`${files.deliveryCount} + 1`, lastDeliveredAt: timestamp, updatedAt: timestamp }).where(eq(files.id, fileId)).run();
+    try {
+      await db.update(files).set({ deliveryCount: sql`${files.deliveryCount} + 1`, lastDeliveredAt: timestamp, updatedAt: timestamp }).where(eq(files.id, fileId)).run();
+    } catch (error) {
+      console.error('delivery count pending reconciliation', error);
+    }
   }
   return rows.length > 0;
 }

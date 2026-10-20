@@ -18,12 +18,17 @@ Upload flow:
 6. `/start <token>` calls `delivery.js`, checks status and expiry, copies the
    stored message, reserves the update in `PENDING`, and marks it `SENT` only
    after the copy succeeds. A pending reservation blocks a duplicate send when
-   database confirmation fails.
+   database confirmation fails; definite Bot API 400/403 failures release the
+   reservation so the same update can retry.
 
 Update idempotency uses `PROCESSING`, `FAILED`, and `COMPLETED` states plus a
 short processing lease, so failed invocations can be retried while duplicates
 already in flight are ignored. Session/file changes use conditional updates and restore
 the previous Session stage when the companion file update cannot be applied.
+
+If archive completion succeeds but Session cleanup fails, the active file stays
+usable and the next Session read removes the stale Session linked to that active
+file.
 
 There is no process-global session state, worker, cron, HTTP server, or binary
 transfer in the product flow. `lib/` modules contain the database and Bot API

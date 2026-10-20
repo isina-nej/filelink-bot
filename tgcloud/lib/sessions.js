@@ -7,6 +7,14 @@ const now = () => Math.floor(Date.now() / 1000);
 
 export async function getSession(userId) {
   const row = await db.select().from(sessions).where(eq(sessions.userId, userId)).get();
+  if (row && (row.stage === SESSION_STAGES.ARCHIVING || row.stage === SESSION_STAGES.ARCHIVE_FAILED)) {
+    const linkedFile = await db.select().from(files).where(and(eq(files.id, row.fileId), eq(files.ownerId, userId))).get();
+    if (linkedFile?.status === FILE_STATES.ACTIVE) {
+      const deleted = await db.delete(sessions).where(and(eq(sessions.id, row.id), eq(sessions.userId, userId), eq(sessions.fileId, row.fileId), eq(sessions.version, row.version), eq(sessions.stage, row.stage))).returning().run();
+      if (deleted.length) return null;
+      return db.select().from(sessions).where(eq(sessions.userId, userId)).get();
+    }
+  }
   if (row && now() - row.updatedAt > SESSION_IDLE_SECONDS) {
     const deleted = await db.delete(sessions).where(and(eq(sessions.id, row.id), eq(sessions.userId, userId), eq(sessions.fileId, row.fileId), eq(sessions.version, row.version), eq(sessions.stage, row.stage))).returning().run();
     if (deleted.length) {

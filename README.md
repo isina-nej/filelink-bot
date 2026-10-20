@@ -69,6 +69,8 @@ process is required.
   message; the project records failure and does not retry automatically.
 - A delivery whose database confirmation is unknown remains `PENDING` and is
   blocked from sending again until it is reconciled.
+- Definite Bot API delivery failures release their pending reservation so a
+  retry can attempt the send again.
 - Physical deletion from the archive channel is intentionally not promised.
 - Upload, management, and deep-link delivery are processed only in private chats.
 
