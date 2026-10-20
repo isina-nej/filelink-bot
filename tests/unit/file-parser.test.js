@@ -5,12 +5,14 @@ import { parseMediaMessage, validateCaption } from '../../tgcloud/lib/file-parse
 test('parses the largest photo and preserves the original caption', () => {
   const parsed = parseMediaMessage({
     chat: { id: 1 },
-    photo: [{ file_id: 'small' }, { file_id: 'large', file_unique_id: 'u', file_size: 42 }],
+    photo: [{ file_id: 'small' }, { file_id: 'large', file_unique_id: 'u', file_size: 42, width: 100, height: 80 }],
     caption: 'توضیح',
   });
   assert.equal(parsed.fileId, 'large');
   assert.equal(parsed.mediaType, 'photo');
   assert.equal(parsed.originalCaption, 'توضیح');
+  assert.equal(parsed.width, 100);
+  assert.equal(parsed.height, 80);
 });
 
 test('rejects albums and protected media', () => {

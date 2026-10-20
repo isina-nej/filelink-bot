@@ -3,8 +3,9 @@
 `tgcloud/schema.js` defines these tables:
 
 - `users`: Telegram identity and display metadata.
-- `files`: source media identifiers, archive message id, token, status, expiry,
-  caption, and delivery count.
+- `files`: source media identifiers, dimensions/duration, thumbnail identifiers,
+  caption entities, archive message id, token, status, expiry, timestamps, and
+  delivery count.
 - `sessions`: one active versioned workflow per user.
 - `processed_updates`: unique update ids for webhook idempotency.
 - `deliveries`: unique file/recipient and update records.

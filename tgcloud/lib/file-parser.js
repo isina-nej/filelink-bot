@@ -16,6 +16,7 @@ export function parseMediaMessage(message) {
   for (const [mediaType, pick] of MEDIA_FIELDS) {
     const media = pick(message[mediaType]);
     if (media?.file_id) {
+      const thumbnail = media.thumbnail ?? media.thumb ?? null;
       return {
         mediaType,
         fileId: media.file_id,
@@ -23,7 +24,19 @@ export function parseMediaMessage(message) {
         fileName: media.file_name ?? null,
         mimeType: media.mime_type ?? null,
         fileSize: Number.isSafeInteger(media.file_size) ? media.file_size : null,
+        width: Number.isSafeInteger(media.width) ? media.width : null,
+        height: Number.isSafeInteger(media.height) ? media.height : null,
+        duration: Number.isSafeInteger(media.duration) ? media.duration : null,
+        thumbnailFileId: thumbnail?.file_id ?? null,
+        thumbnailFileUniqueId: thumbnail?.file_unique_id ?? null,
+        mediaMetadata: {
+          mediaType,
+          mimeType: media.mime_type ?? null,
+          fileName: media.file_name ?? null,
+          fileUniqueId: media.file_unique_id ?? null,
+        },
         originalCaption: typeof message.caption === 'string' ? message.caption : '',
+        captionEntities: Array.isArray(message.caption_entities) ? message.caption_entities : null,
       };
     }
   }

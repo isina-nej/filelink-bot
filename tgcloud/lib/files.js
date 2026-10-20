@@ -16,7 +16,14 @@ export async function createDraft(ownerId, sourceChatId, sourceMessageId, media)
     fileName: media.fileName,
     mimeType: media.mimeType,
     fileSize: media.fileSize,
+    width: media.width,
+    height: media.height,
+    duration: media.duration,
+    thumbnailFileId: media.thumbnailFileId,
+    thumbnailFileUniqueId: media.thumbnailFileUniqueId,
+    mediaMetadata: media.mediaMetadata,
     originalCaption: media.originalCaption,
+    captionEntities: media.captionEntities,
     finalCaption: '',
     status: FILE_STATES.DRAFT,
     updatedAt: now(),
@@ -40,6 +47,11 @@ export async function markFileArchiving(fileId, ownerId) {
 
 export async function markArchiveFailed(fileId, code, message) {
   await db.update(files).set({ status: FILE_STATES.ARCHIVE_FAILED, archiveErrorCode: String(code ?? 'UNKNOWN'), archiveError: String(message ?? '').slice(0, 500), updatedAt: now() }).where(eq(files.id, fileId)).run();
+}
+
+export async function abandonDraft(fileId, ownerId) {
+  await db.update(files).set({ status: FILE_STATES.CANCELLED, updatedAt: now() })
+    .where(and(eq(files.id, fileId), eq(files.ownerId, ownerId), eq(files.status, FILE_STATES.DRAFT))).run();
 }
 
 export async function markArchived(fileId, storageChatId, storageMessageId, token, archivedAt, expiresAt) {
@@ -66,7 +78,7 @@ export async function recordDelivery(fileId, receiverChatId, updateId) {
   const rows = await db.insert(deliveries).values({ fileId, receiverChatId, updateId, deliveredAt: now() })
     .onConflictDoNothing().returning().run();
   if (rows.length) {
-    await db.update(files).set({ deliveryCount: sql`${files.deliveryCount} + 1`, updatedAt: now() }).where(eq(files.id, fileId)).run();
+    await db.update(files).set({ deliveryCount: sql`${files.deliveryCount} + 1`, lastDeliveredAt: now(), updatedAt: now() }).where(eq(files.id, fileId)).run();
   }
   return rows.length > 0;
 }

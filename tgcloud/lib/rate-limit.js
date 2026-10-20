@@ -1,17 +1,19 @@
 import { db } from 'sdk';
 import { rateLimits } from '../schema.js';
-import { eq } from 'sdk/db';
+import { and, eq, lte, lt, or, sql } from 'sdk/db';
 import { RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_SECONDS } from './constants.js';
 
 export async function consumeRateLimit(userId, limit = RATE_LIMIT_REQUESTS) {
   const now = Math.floor(Date.now() / 1000);
+  const cutoff = now - RATE_LIMIT_WINDOW_SECONDS;
+  const updated = await db.update(rateLimits).set({
+    windowStartedAt: sql`CASE WHEN ${rateLimits.windowStartedAt} <= ${cutoff} THEN ${now} ELSE ${rateLimits.windowStartedAt} END`,
+    requestCount: sql`CASE WHEN ${rateLimits.windowStartedAt} <= ${cutoff} THEN 1 ELSE ${rateLimits.requestCount} + 1 END`,
+  }).where(and(eq(rateLimits.userId, userId), or(lte(rateLimits.windowStartedAt, cutoff), lt(rateLimits.requestCount, limit)))).returning().run();
+  if (updated.length) return true;
+  const inserted = await db.insert(rateLimits).values({ userId, windowStartedAt: now, requestCount: 1 })
+    .onConflictDoNothing({ target: rateLimits.userId }).returning().run();
+  if (inserted.length) return true;
   const row = await db.select().from(rateLimits).where(eq(rateLimits.userId, userId)).get();
-  if (!row || now - row.windowStartedAt >= RATE_LIMIT_WINDOW_SECONDS) {
-    await db.insert(rateLimits).values({ userId, windowStartedAt: now, requestCount: 1 })
-      .onConflictDoUpdate({ target: rateLimits.userId, set: { windowStartedAt: now, requestCount: 1 } }).run();
-    return true;
-  }
-  if (row.requestCount >= limit) return false;
-  await db.update(rateLimits).set({ requestCount: row.requestCount + 1 }).where(eq(rateLimits.userId, userId)).run();
-  return true;
+  return Boolean(row && (row.windowStartedAt <= cutoff || row.requestCount < limit));
 }

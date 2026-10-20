@@ -62,12 +62,13 @@ process is required.
 ## Limitations
 
 - Albums/media groups, stickers, and video notes are rejected in the MVP.
-- Telegram Serverless currently exposes file identifiers but not file-byte
-  download/upload APIs, so all operations use message copying.
+- Telegram Serverless exposes byte helpers, but this project deliberately uses
+  `copyMessage`; Bot API `getFile` downloads are capped at 20 MB.
 - Expiration is lazy: a link is marked expired when a recipient requests it.
 - A retry after an unknown external Bot API outcome can leave an extra archive
   message; the project records failure and does not retry automatically.
 - Physical deletion from the archive channel is intentionally not promised.
+- Upload, management, and deep-link delivery are processed only in private chats.
 
 See [docs/architecture.md](docs/architecture.md), [docs/database.md](docs/database.md),
 [docs/compatibility.md](docs/compatibility.md), and [docs/deployment.md](docs/deployment.md).

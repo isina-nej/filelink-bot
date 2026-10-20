@@ -1,4 +1,4 @@
-import { table, integer, text, index, uniqueIndex, sql } from 'sdk/db';
+import { table, integer, text, json, index, uniqueIndex, sql } from 'sdk/db';
 
 // Telegram Serverless does not support foreign keys. The ids below are logical
 // links and are scoped in every query in lib/.
@@ -21,7 +21,14 @@ export const files = table('files', {
   fileName: text('file_name'),
   mimeType: text('mime_type'),
   fileSize: integer('file_size'),
+  width: integer('width'),
+  height: integer('height'),
+  duration: integer('duration'),
+  thumbnailFileId: text('thumbnail_file_id'),
+  thumbnailFileUniqueId: text('thumbnail_file_unique_id'),
+  mediaMetadata: json('media_metadata'),
   originalCaption: text('original_caption'),
+  captionEntities: json('caption_entities'),
   finalCaption: text('final_caption').notNull().default(''),
   storageChatId: integer('storage_chat_id'),
   storageMessageId: integer('storage_message_id'),
@@ -30,6 +37,8 @@ export const files = table('files', {
   expirationDays: integer('expiration_days'),
   expiresAt: integer('expires_at'),
   archivedAt: integer('archived_at'),
+  receivedAt: integer('received_at').notNull().default(sql`(unixepoch())`),
+  lastDeliveredAt: integer('last_delivered_at'),
   deliveryCount: integer('delivery_count').notNull().default(0),
   archiveErrorCode: text('archive_error_code'),
   archiveError: text('archive_error'),
@@ -55,6 +64,9 @@ export const sessions = table('sessions', {
 
 export const processedUpdates = table('processed_updates', {
   updateId: integer('update_id').primaryKey(),
+  state: text('state').notNull().default('PROCESSING'),
+  claimedAt: integer('claimed_at').notNull().default(sql`(unixepoch())`),
+  completedAt: integer('completed_at'),
   processedAt: integer('processed_at').notNull().default(sql`(unixepoch())`),
 });
 

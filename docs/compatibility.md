@@ -12,13 +12,17 @@ Confirmed platform facts:
   relative `.js` imports inside `tgcloud/`.
 - `api.<method>()` returns the unwrapped Bot API result and throws `BotApiError`.
 - Database operations are asynchronous; schema foreign keys are unsupported.
-- File bytes cannot be downloaded/uploaded in a handler, so this project uses
-  `copyMessage` for both archival and delivery.
+- The SDK also exposes `InputFile`, `api.getFileContent(file_id)`, and
+  `api.getFileStream(file_id)`. Telegram's Bot API currently limits `getFile`
+  downloads to 20 MB. FileLink intentionally does not use byte transfer: it
+  keeps the serverless path small and uses `copyMessage` for both archival and
+  delivery.
 - `fetch` is textual and is not used by this bot.
 - `crypto.getRandomValues` is required for secure share tokens. If the isolate
   does not expose it, deployment must stop rather than use `Math.random()`.
 
 Sources: [Telegram Serverless](https://core.telegram.org/bots/serverless),
+[Telegram Bot API](https://core.telegram.org/bots/api),
 [tgcloud CLI](https://github.com/justwasm/tgcloud), and the
 [SDK reference/template](https://github.com/erfnzdeh/Telegram-Serverless-Bot-Template).
 

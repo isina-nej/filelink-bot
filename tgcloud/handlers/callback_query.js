@@ -1,5 +1,5 @@
 import { api } from 'sdk';
-import { claimUpdate } from '../lib/idempotency.js';
+import { claimUpdate, completeUpdate } from '../lib/idempotency.js';
 import { rememberUser } from '../lib/users.js';
 import { disableFile, listOwnerFiles } from '../lib/files.js';
 import { getSession, moveToExpiry, setExpiryAndClaim, cancelSession, claimArchive } from '../lib/sessions.js';
@@ -28,16 +28,31 @@ async function archiveAndReply(query, userId, fileId) {
 
 export default async function callbackQueryHandler(query, ctx) {
   const updateId = ctx?.update?.update_id;
-  if (!(await claimUpdate(updateId))) {
+  let claimed;
+  try {
+    claimed = await claimUpdate(updateId);
+  } catch (error) {
+    logEvent('callback_claim_error', { operation: 'idempotency', status: 'failed', error_code: error.code || 'DATABASE_ERROR' });
+    await answer(query.id, TEXT.internalError || 'خطای داخلی رخ داد.');
+    return;
+  }
+  if (!claimed) {
     await answer(query.id, 'این درخواست قبلاً پردازش شده است');
     return;
   }
-  await rememberUser(query.from);
   const message = query.message;
   await answer(query.id);
-  if (!message?.chat?.id || !query.from?.id) return;
+  if (!message?.chat?.id || !query.from?.id) {
+    await completeUpdate(updateId);
+    return;
+  }
+  if (message.chat.type && message.chat.type !== 'private') {
+    await completeUpdate(updateId);
+    return;
+  }
   const userId = query.from.id;
   try {
+    await rememberUser(query.from);
     const parts = String(query.data || '').split(':');
     const action = parts[0];
     if (action === 'caption' && parts[1] === 'none') {
@@ -49,14 +64,18 @@ export default async function callbackQueryHandler(query, ctx) {
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await answer(query.id, 'کپشن حذف شد');
       await api.sendMessage({ chat_id: message.chat.id, text: TEXT.expiryPrompt, reply_markup: expiryKeyboard(fileId, next.version) });
+      await completeUpdate(updateId);
       return;
     }
     if (action === 'cancel') {
       const fileId = int(parts[1]);
       const version = int(parts[2]);
-      if (fileId && version) await cancelSession(userId, fileId, version);
+      if (!fileId || !version || !(await cancelSession(userId, fileId, version))) {
+        throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
+      }
       await answer(query.id, 'لغو شد');
       await api.sendMessage({ chat_id: message.chat.id, text: TEXT.cancelled, reply_markup: mainKeyboard });
+      await completeUpdate(updateId);
       return;
     }
     if (action === 'expiry') {
@@ -71,6 +90,7 @@ export default async function callbackQueryHandler(query, ctx) {
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await answer(query.id, 'در حال ذخیره‌سازی');
       await archiveAndReply(query, userId, fileId);
+      await completeUpdate(updateId);
       return;
     }
     if (action === 'retry') {
@@ -82,6 +102,7 @@ export default async function callbackQueryHandler(query, ctx) {
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await answer(query.id, 'تلاش دوباره آغاز شد');
       await archiveAndReply(query, userId, fileId);
+      await completeUpdate(updateId);
       return;
     }
     if (action === 'file' && parts[1] === 'disable') {
@@ -89,22 +110,29 @@ export default async function callbackQueryHandler(query, ctx) {
       if (!fileId || !(await disableFile(fileId, userId))) throw new FileLinkError('NO_ACCESS', TEXT.noAccess);
       await answer(query.id, 'لینک غیرفعال شد');
       await api.sendMessage({ chat_id: message.chat.id, text: 'لینک فایل غیرفعال شد.', reply_markup: mainKeyboard });
+      await completeUpdate(updateId);
       return;
     }
     if (action === 'menu' && parts[1] === 'files') {
       const rows = await listOwnerFiles(userId);
       await answer(query.id, 'فایل‌های شما');
       await api.sendMessage({ chat_id: message.chat.id, text: rows.length ? rows.map((file) => `${file.id}. ${file.fileName || 'بدون نام'} — ${file.status}`).join('\n') : TEXT.noFiles, reply_markup: mainKeyboard });
+      await completeUpdate(updateId);
       return;
     }
     if (action === 'menu' && parts[1] === 'new') {
       await answer(query.id, 'فایل را ارسال کنید');
       await api.sendMessage({ chat_id: message.chat.id, text: 'فایل را ارسال کنید.', reply_markup: mainKeyboard });
+      await completeUpdate(updateId);
       return;
     }
     await answer(query.id, TEXT.invalidState);
+    await completeUpdate(updateId);
   } catch (error) {
     logEvent('callback_error', { user_id: userId, operation: 'callback', status: 'failed', error_code: error.code || 'INTERNAL_ERROR' });
     await answer(query.id, publicMessage(error));
+    if (error instanceof FileLinkError && ['INVALID_STATE', 'NOT_FOUND', 'EXPIRED', 'DISABLED', 'NO_ACCESS'].includes(error.code)) {
+      await completeUpdate(updateId);
+    }
   }
 }

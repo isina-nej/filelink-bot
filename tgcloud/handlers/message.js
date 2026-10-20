@@ -1,9 +1,9 @@
 import { api } from 'sdk';
 import { FILE_STATES, SESSION_STAGES } from '../lib/constants.js';
-import { createDraft, listOwnerFiles } from '../lib/files.js';
+import { abandonDraft, createDraft, listOwnerFiles } from '../lib/files.js';
 import { parseMediaMessage, validateCaption } from '../lib/file-parser.js';
 import { parseExpirationDays, calculateExpiresAt } from '../lib/expiration.js';
-import { claimUpdate } from '../lib/idempotency.js';
+import { claimUpdate, completeUpdate } from '../lib/idempotency.js';
 import { rememberUser } from '../lib/users.js';
 import { consumeRateLimit } from '../lib/rate-limit.js';
 import { beginSession, getSession, moveToExpiry, setExpiryAndClaim, cancelSession } from '../lib/sessions.js';
@@ -74,6 +74,11 @@ async function handleMedia(message, userId) {
   if (!file) throw new FileLinkError('DATABASE_ERROR', 'ثبت اولیه فایل انجام نشد.');
   const createdSession = await beginSession(userId, file.id);
   if (!createdSession) throw new FileLinkError('DATABASE_ERROR', 'ثبت مرحله فایل انجام نشد.');
+  if (createdSession.fileId !== file.id) {
+    await abandonDraft(file.id, userId);
+    await api.sendMessage({ chat_id: message.chat.id, text: TEXT.wait });
+    return;
+  }
   await api.sendMessage({ chat_id: message.chat.id, text: `${TEXT.uploadReady}\n\n${TEXT.captionPrompt}`, reply_markup: captionKeyboard(file.id, createdSession.version) });
 }
 
@@ -81,6 +86,7 @@ export default async function messageHandler(message, ctx) {
   const chatId = message?.chat?.id;
   const userId = message?.from?.id ?? chatId;
   if (!chatId || !userId) return;
+  if (message.chat.type && message.chat.type !== 'private') return;
   const updateId = ctx?.update?.update_id;
   try {
     if (!(await claimUpdate(updateId))) return;
@@ -91,64 +97,80 @@ export default async function messageHandler(message, ctx) {
       const token = args[0];
       if (token) {
         await deliverToken(token, chatId, updateId);
+        await completeUpdate(updateId);
         return;
       }
       await sendMenu(chatId, TEXT.welcome(message.from?.first_name || 'دوست عزیز'));
+      await completeUpdate(updateId);
       return;
     }
     if (command === '/help' || text === '❓ راهنما') {
       await sendMenu(chatId, TEXT.help);
+      await completeUpdate(updateId);
       return;
     }
     if (command === '/privacy') {
       await sendMenu(chatId, TEXT.privacy);
+      await completeUpdate(updateId);
       return;
     }
     if (command === '/files' || text === '📁 فایل‌های من') {
       await sendFiles(chatId, userId);
+      await completeUpdate(updateId);
       return;
     }
     if (command === '/new' || text === '📤 ارسال فایل جدید') {
       await api.sendMessage({ chat_id: chatId, text: 'فایل را ارسال کنید.', reply_markup: mainKeyboard });
+      await completeUpdate(updateId);
       return;
     }
     if (command === '/cancel') {
       const session = await getSession(userId);
       if (session) await cancelSession(userId, session.fileId, session.version);
       await sendMenu(chatId, TEXT.cancelled);
+      await completeUpdate(updateId);
       return;
     }
 
     const media = parseMediaMessage(message);
     if (media) {
       await handleMedia(message, userId);
+      await completeUpdate(updateId);
       return;
     }
     const session = await getSession(userId);
     if (session?.stage === SESSION_STAGES.WAITING_CAPTION) {
       if (!validateCaption(text)) {
         await api.sendMessage({ chat_id: chatId, text: TEXT.captionInvalid, reply_markup: captionKeyboard(session.fileId, session.version) });
+        await completeUpdate(updateId);
         return;
       }
       const next = await moveToExpiry(userId, session.fileId, session.version, text);
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await api.sendMessage({ chat_id: chatId, text: TEXT.expiryPrompt, reply_markup: expiryKeyboard(session.fileId, next.version) });
+      await completeUpdate(updateId);
       return;
     }
     if (session?.stage === SESSION_STAGES.WAITING_EXPIRY) {
       const days = parseExpirationDays(text);
       if (days == null) {
         await api.sendMessage({ chat_id: chatId, text: TEXT.expiryInvalid, reply_markup: expiryKeyboard(session.fileId, session.version) });
+        await completeUpdate(updateId);
         return;
       }
       const next = await setExpiryAndClaim(userId, session.fileId, session.version, days, calculateExpiresAt(Math.floor(Date.now() / 1000), days));
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await handleArchive(userId, chatId, session.fileId);
+      await completeUpdate(updateId);
       return;
     }
     await sendMenu(chatId, TEXT.help);
+    await completeUpdate(updateId);
   } catch (error) {
     logEvent('message_error', { user_id: userId, operation: 'message', status: 'failed', error_code: error.code || 'INTERNAL_ERROR' });
     await api.sendMessage({ chat_id: chatId, text: publicMessage(error), reply_markup: mainKeyboard });
+    if (error instanceof FileLinkError && ['INVALID_STATE', 'NOT_FOUND', 'EXPIRED', 'DISABLED', 'NO_ACCESS'].includes(error.code)) {
+      await completeUpdate(updateId);
+    }
   }
 }
