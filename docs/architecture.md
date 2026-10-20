@@ -16,7 +16,9 @@ Upload flow:
    access and calls `api.copyMessage` with an explicit caption.
 5. A 128-bit random token is stored only after the archive message succeeds.
 6. `/start <token>` calls `delivery.js`, checks status and expiry, copies the
-   stored message, and records a delivery after success.
+   stored message, reserves the update in `PENDING`, and marks it `SENT` only
+   after the copy succeeds. A pending reservation blocks a duplicate send when
+   database confirmation fails.
 
 Update idempotency uses `PROCESSING`, `FAILED`, and `COMPLETED` states plus a
 short processing lease, so failed invocations can be retried while duplicates

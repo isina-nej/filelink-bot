@@ -88,8 +88,13 @@ export default async function messageHandler(message, ctx) {
   if (!chatId || !userId) return;
   if (message.chat.type && message.chat.type !== 'private') return;
   const updateId = ctx?.update?.update_id;
+  let finishUpdate = async () => {};
+  let failUpdate = async () => {};
   try {
-    if (!(await claimUpdate(updateId))) return;
+    const claimToken = await claimUpdate(updateId);
+    if (!claimToken) return;
+    finishUpdate = () => completeUpdate(updateId, claimToken);
+    failUpdate = () => releaseUpdate(updateId, claimToken);
     await rememberUser(message.from ?? { id: userId });
     const text = typeof message.text === 'string' ? message.text.trim() : '';
     const { command, args } = commandOf(text);
@@ -97,84 +102,84 @@ export default async function messageHandler(message, ctx) {
       const token = args[0];
       if (token) {
         await deliverToken(token, chatId, updateId);
-        await completeUpdate(updateId);
+        await finishUpdate();
         return;
       }
       await sendMenu(chatId, TEXT.welcome(message.from?.first_name || 'دوست عزیز'));
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (command === '/help' || text === '❓ راهنما') {
       await sendMenu(chatId, TEXT.help);
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (command === '/privacy') {
       await sendMenu(chatId, TEXT.privacy);
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (command === '/files' || text === '📁 فایل‌های من') {
       await sendFiles(chatId, userId);
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (command === '/new' || text === '📤 ارسال فایل جدید') {
       await api.sendMessage({ chat_id: chatId, text: 'فایل را ارسال کنید.', reply_markup: mainKeyboard });
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (command === '/cancel') {
       const session = await getSession(userId);
       if (session) await cancelSession(userId, session.fileId, session.version);
       await sendMenu(chatId, TEXT.cancelled);
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
 
     const media = parseMediaMessage(message);
     if (media) {
       await handleMedia(message, userId);
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     const session = await getSession(userId);
     if (session?.stage === SESSION_STAGES.WAITING_CAPTION) {
       if (!validateCaption(text)) {
         await api.sendMessage({ chat_id: chatId, text: TEXT.captionInvalid, reply_markup: captionKeyboard(session.fileId, session.version) });
-        await completeUpdate(updateId);
+        await finishUpdate();
         return;
       }
       const next = await moveToExpiry(userId, session.fileId, session.version, text);
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await api.sendMessage({ chat_id: chatId, text: TEXT.expiryPrompt, reply_markup: expiryKeyboard(session.fileId, next.version) });
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (session?.stage === SESSION_STAGES.WAITING_EXPIRY) {
       const days = parseExpirationDays(text);
       if (days == null) {
         await api.sendMessage({ chat_id: chatId, text: TEXT.expiryInvalid, reply_markup: expiryKeyboard(session.fileId, session.version) });
-        await completeUpdate(updateId);
+        await finishUpdate();
         return;
       }
       const next = await setExpiryAndClaim(userId, session.fileId, session.version, days, calculateExpiresAt(Math.floor(Date.now() / 1000), days));
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await handleArchive(userId, chatId, session.fileId);
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     await sendMenu(chatId, TEXT.help);
-    await completeUpdate(updateId);
+    await finishUpdate();
   } catch (error) {
     logEvent('message_error', { user_id: userId, operation: 'message', status: 'failed', error_code: error.code || 'INTERNAL_ERROR' });
     try {
       await api.sendMessage({ chat_id: chatId, text: publicMessage(error), reply_markup: mainKeyboard });
     } finally {
       if (error instanceof FileLinkError && ['INVALID_STATE', 'NOT_FOUND', 'EXPIRED', 'DISABLED', 'NO_ACCESS'].includes(error.code)) {
-        await completeUpdate(updateId);
+        await finishUpdate();
       } else {
-        await releaseUpdate(updateId);
+        await failUpdate();
       }
     }
   }

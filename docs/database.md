@@ -9,7 +9,8 @@
 - `sessions`: one active versioned workflow per user.
 - `processed_updates`: unique update ids with `PROCESSING`, `FAILED`, and
   `COMPLETED` states for webhook idempotency and retry recovery.
-- `deliveries`: unique file/recipient and update records.
+- `deliveries`: update reservations with `PENDING`/`SENT` state, unique update
+  keys, and delivery timestamps.
 - `rate_limits`: a short per-user request window.
 
 Telegram Serverless migrations are explicit. `tgcloud push` uploads code and

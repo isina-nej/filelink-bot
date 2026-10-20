@@ -14,6 +14,5 @@ export async function consumeRateLimit(userId, limit = RATE_LIMIT_REQUESTS) {
   const inserted = await db.insert(rateLimits).values({ userId, windowStartedAt: now, requestCount: 1 })
     .onConflictDoNothing({ target: rateLimits.userId }).returning().run();
   if (inserted.length) return true;
-  const row = await db.select().from(rateLimits).where(eq(rateLimits.userId, userId)).get();
-  return Boolean(row && (row.windowStartedAt <= cutoff || row.requestCount < limit));
+  return false;
 }

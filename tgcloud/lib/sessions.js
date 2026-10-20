@@ -8,10 +8,13 @@ const now = () => Math.floor(Date.now() / 1000);
 export async function getSession(userId) {
   const row = await db.select().from(sessions).where(eq(sessions.userId, userId)).get();
   if (row && now() - row.updatedAt > SESSION_IDLE_SECONDS) {
-    await db.delete(sessions).where(eq(sessions.id, row.id)).run();
-    await db.update(files).set({ status: FILE_STATES.CANCELLED, updatedAt: now() })
-      .where(and(eq(files.id, row.fileId), eq(files.ownerId, userId), eq(files.status, FILE_STATES.DRAFT))).run();
-    return null;
+    const deleted = await db.delete(sessions).where(and(eq(sessions.id, row.id), eq(sessions.userId, userId), eq(sessions.fileId, row.fileId), eq(sessions.version, row.version), eq(sessions.stage, row.stage))).returning().run();
+    if (deleted.length) {
+      await db.update(files).set({ status: FILE_STATES.CANCELLED, updatedAt: now() })
+        .where(and(eq(files.id, row.fileId), eq(files.ownerId, userId), eq(files.status, FILE_STATES.DRAFT))).run();
+      return null;
+    }
+    return db.select().from(sessions).where(eq(sessions.userId, userId)).get();
   }
   return row;
 }

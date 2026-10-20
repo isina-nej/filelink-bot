@@ -46,7 +46,8 @@ export async function markFileArchiving(fileId, ownerId) {
 }
 
 export async function markArchiveFailed(fileId, code, message) {
-  await db.update(files).set({ status: FILE_STATES.ARCHIVE_FAILED, archiveErrorCode: String(code ?? 'UNKNOWN'), archiveError: String(message ?? '').slice(0, 500), updatedAt: now() }).where(eq(files.id, fileId)).run();
+  await db.update(files).set({ status: FILE_STATES.ARCHIVE_FAILED, archiveErrorCode: String(code ?? 'UNKNOWN'), archiveError: String(message ?? '').slice(0, 500), updatedAt: now() })
+    .where(and(eq(files.id, fileId), eq(files.status, FILE_STATES.ARCHIVING))).run();
 }
 
 export async function abandonDraft(fileId, ownerId) {
@@ -75,10 +76,29 @@ export async function listOwnerFiles(ownerId, limit = 20, offset = 0) {
 }
 
 export async function recordDelivery(fileId, receiverChatId, updateId) {
-  const rows = await db.insert(deliveries).values({ fileId, receiverChatId, updateId, deliveredAt: now() })
+  const rows = await db.insert(deliveries).values({ fileId, receiverChatId, updateId, state: 'SENT', deliveredAt: now(), sentAt: now() })
     .onConflictDoNothing().returning().run();
   if (rows.length) {
     await db.update(files).set({ deliveryCount: sql`${files.deliveryCount} + 1`, lastDeliveredAt: now(), updatedAt: now() }).where(eq(files.id, fileId)).run();
+  }
+  return rows.length > 0;
+}
+
+export async function reserveDelivery(fileId, receiverChatId, updateId) {
+  if (!Number.isSafeInteger(updateId)) return { status: 'UNTRACKED' };
+  const rows = await db.insert(deliveries).values({ fileId, receiverChatId, updateId, state: 'PENDING', deliveredAt: now() })
+    .onConflictDoNothing().returning().run();
+  if (rows.length) return { status: 'NEW' };
+  const existing = await db.select().from(deliveries).where(eq(deliveries.updateId, updateId)).get();
+  return { status: existing?.state === 'SENT' ? 'SENT' : 'PENDING' };
+}
+
+export async function completeDelivery(fileId, updateId) {
+  const timestamp = now();
+  const rows = await db.update(deliveries).set({ state: 'SENT', sentAt: timestamp, deliveredAt: timestamp })
+    .where(and(eq(deliveries.fileId, fileId), eq(deliveries.updateId, updateId), eq(deliveries.state, 'PENDING'))).returning().run();
+  if (rows.length) {
+    await db.update(files).set({ deliveryCount: sql`${files.deliveryCount} + 1`, lastDeliveredAt: timestamp, updatedAt: timestamp }).where(eq(files.id, fileId)).run();
   }
   return rows.length > 0;
 }

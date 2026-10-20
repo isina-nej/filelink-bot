@@ -67,6 +67,8 @@ process is required.
 - Expiration is lazy: a link is marked expired when a recipient requests it.
 - A retry after an unknown external Bot API outcome can leave an extra archive
   message; the project records failure and does not retry automatically.
+- A delivery whose database confirmation is unknown remains `PENDING` and is
+  blocked from sending again until it is reconciled.
 - Physical deletion from the archive channel is intentionally not promised.
 - Upload, management, and deep-link delivery are processed only in private chats.
 

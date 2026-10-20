@@ -40,14 +40,16 @@ export default async function callbackQueryHandler(query, ctx) {
     await answer(query.id, 'این درخواست قبلاً پردازش شده است');
     return;
   }
+  const finishUpdate = () => completeUpdate(updateId, claimed);
+  const failUpdate = () => releaseUpdate(updateId, claimed);
   const message = query.message;
   await answer(query.id);
   if (!message?.chat?.id || !query.from?.id) {
-    await completeUpdate(updateId);
+    await finishUpdate();
     return;
   }
   if (message.chat.type && message.chat.type !== 'private') {
-    await completeUpdate(updateId);
+    await finishUpdate();
     return;
   }
   const userId = query.from.id;
@@ -64,7 +66,7 @@ export default async function callbackQueryHandler(query, ctx) {
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await answer(query.id, 'کپشن حذف شد');
       await api.sendMessage({ chat_id: message.chat.id, text: TEXT.expiryPrompt, reply_markup: expiryKeyboard(fileId, next.version) });
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (action === 'cancel') {
@@ -75,7 +77,7 @@ export default async function callbackQueryHandler(query, ctx) {
       }
       await answer(query.id, 'لغو شد');
       await api.sendMessage({ chat_id: message.chat.id, text: TEXT.cancelled, reply_markup: mainKeyboard });
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (action === 'expiry') {
@@ -90,7 +92,7 @@ export default async function callbackQueryHandler(query, ctx) {
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await answer(query.id, 'در حال ذخیره‌سازی');
       await archiveAndReply(query, userId, fileId);
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (action === 'retry') {
@@ -102,7 +104,7 @@ export default async function callbackQueryHandler(query, ctx) {
       if (!next) throw new FileLinkError('INVALID_STATE', TEXT.invalidState);
       await answer(query.id, 'تلاش دوباره آغاز شد');
       await archiveAndReply(query, userId, fileId);
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (action === 'file' && parts[1] === 'disable') {
@@ -110,33 +112,33 @@ export default async function callbackQueryHandler(query, ctx) {
       if (!fileId || !(await disableFile(fileId, userId))) throw new FileLinkError('NO_ACCESS', TEXT.noAccess);
       await answer(query.id, 'لینک غیرفعال شد');
       await api.sendMessage({ chat_id: message.chat.id, text: 'لینک فایل غیرفعال شد.', reply_markup: mainKeyboard });
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (action === 'menu' && parts[1] === 'files') {
       const rows = await listOwnerFiles(userId);
       await answer(query.id, 'فایل‌های شما');
       await api.sendMessage({ chat_id: message.chat.id, text: rows.length ? rows.map((file) => `${file.id}. ${file.fileName || 'بدون نام'} — ${file.status}`).join('\n') : TEXT.noFiles, reply_markup: mainKeyboard });
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     if (action === 'menu' && parts[1] === 'new') {
       await answer(query.id, 'فایل را ارسال کنید');
       await api.sendMessage({ chat_id: message.chat.id, text: 'فایل را ارسال کنید.', reply_markup: mainKeyboard });
-      await completeUpdate(updateId);
+      await finishUpdate();
       return;
     }
     await answer(query.id, TEXT.invalidState);
-    await completeUpdate(updateId);
+    await finishUpdate();
   } catch (error) {
     logEvent('callback_error', { user_id: userId, operation: 'callback', status: 'failed', error_code: error.code || 'INTERNAL_ERROR' });
     try {
       await answer(query.id, publicMessage(error));
     } finally {
       if (error instanceof FileLinkError && ['INVALID_STATE', 'NOT_FOUND', 'EXPIRED', 'DISABLED', 'NO_ACCESS'].includes(error.code)) {
-        await completeUpdate(updateId);
+        await finishUpdate();
       } else {
-        await releaseUpdate(updateId);
+        await failUpdate();
       }
     }
   }

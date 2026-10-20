@@ -1,7 +1,7 @@
 import { api } from 'sdk';
 import { FILE_STATES } from './constants.js';
 import { ERROR_MESSAGES, FileLinkError, classifyTelegramError } from './errors.js';
-import { getFileByToken, markExpired, recordDelivery } from './files.js';
+import { completeDelivery, getFileByToken, markExpired, recordDelivery, reserveDelivery } from './files.js';
 import { isExpired } from './expiration.js';
 import { isValidShareToken } from './tokens.js';
 
@@ -17,11 +17,18 @@ export async function deliverToken(token, receiverChatId, updateId) {
   if (file.status !== FILE_STATES.ACTIVE || file.storageChatId == null || file.storageMessageId == null) {
     throw new FileLinkError('NOT_FOUND', ERROR_MESSAGES.NOT_FOUND);
   }
+  const reservation = await reserveDelivery(file.id, receiverChatId, updateId);
+  if (reservation.status === 'SENT') return file;
+  if (reservation.status === 'PENDING') throw new FileLinkError('DELIVERY_PENDING', ERROR_MESSAGES.DELIVERY_FAILED);
   try {
     await api.copyMessage({ chat_id: receiverChatId, from_chat_id: file.storageChatId, message_id: file.storageMessageId });
   } catch (error) {
     throw error instanceof FileLinkError ? error : classifyTelegramError(error, 'delivery');
   }
-  await recordDelivery(file.id, receiverChatId, updateId);
+  if (reservation.status === 'UNTRACKED') {
+    await recordDelivery(file.id, receiverChatId, updateId);
+  } else if (!(await completeDelivery(file.id, updateId))) {
+    throw new FileLinkError('DATABASE_ERROR', ERROR_MESSAGES.DELIVERY_FAILED);
+  }
   return file;
 }

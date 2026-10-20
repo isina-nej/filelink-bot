@@ -65,6 +65,7 @@ export const sessions = table('sessions', {
 export const processedUpdates = table('processed_updates', {
   updateId: integer('update_id').primaryKey(),
   state: text('state').notNull().default('PROCESSING'),
+  claimToken: text('claim_token'),
   claimedAt: integer('claimed_at').notNull().default(sql`(unixepoch())`),
   completedAt: integer('completed_at'),
   processedAt: integer('processed_at').notNull().default(sql`(unixepoch())`),
@@ -75,10 +76,13 @@ export const deliveries = table('deliveries', {
   fileId: integer('file_id').notNull(),
   receiverChatId: integer('receiver_chat_id').notNull(),
   updateId: integer('update_id'),
+  state: text('state').notNull().default('SENT'),
   deliveredAt: integer('delivered_at').notNull().default(sql`(unixepoch())`),
+  sentAt: integer('sent_at'),
 }, (t) => ({
   receiverIdx: index('idx_deliveries_file_receiver').on(t.fileId, t.receiverChatId),
   updateIdx: uniqueIndex('uidx_deliveries_update').on(t.updateId),
+  fileUpdateIdx: uniqueIndex('uidx_deliveries_file_update').on(t.fileId, t.updateId),
 }));
 
 export const rateLimits = table('rate_limits', {

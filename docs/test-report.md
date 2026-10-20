@@ -3,7 +3,8 @@
 The repository includes local tests for media parsing and metadata extraction,
 caption limits, Persian and Arabic digit normalization, expiry boundaries, and
 deep-link token format. The runtime state changes now use conditional database
-updates and compensating rollback paths for Session/file changes.
+updates, claim ownership, delivery reservations, and compensating rollback
+paths for Session/file changes.
 
 Run:
 
