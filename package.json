@@ -1,0 +1,20 @@
+{
+  "name": "filelink-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "devDependencies": {
+    "@tgcloud/cli": "^0.2.0"
+  },
+  "scripts": {
+    "test": "node --test tests/unit/*.test.js",
+    "check": "node tests/check-syntax.js",
+    "lint": "node tests/lint.js",
+    "deploy": "tgcloud push",
+    "status": "tgcloud status",
+    "diff": "tgcloud diff",
+    "migrate": "tgcloud migrate",
+    "run": "tgcloud run"
+  }
+}
