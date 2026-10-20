@@ -3,7 +3,7 @@ import { FILE_STATES, SESSION_STAGES } from '../lib/constants.js';
 import { abandonDraft, createDraft, listOwnerFiles } from '../lib/files.js';
 import { parseMediaMessage, validateCaption } from '../lib/file-parser.js';
 import { parseExpirationDays, calculateExpiresAt } from '../lib/expiration.js';
-import { claimUpdate, completeUpdate } from '../lib/idempotency.js';
+import { claimUpdate, completeUpdate, releaseUpdate } from '../lib/idempotency.js';
 import { rememberUser } from '../lib/users.js';
 import { consumeRateLimit } from '../lib/rate-limit.js';
 import { beginSession, getSession, moveToExpiry, setExpiryAndClaim, cancelSession } from '../lib/sessions.js';
@@ -168,9 +168,14 @@ export default async function messageHandler(message, ctx) {
     await completeUpdate(updateId);
   } catch (error) {
     logEvent('message_error', { user_id: userId, operation: 'message', status: 'failed', error_code: error.code || 'INTERNAL_ERROR' });
-    await api.sendMessage({ chat_id: chatId, text: publicMessage(error), reply_markup: mainKeyboard });
-    if (error instanceof FileLinkError && ['INVALID_STATE', 'NOT_FOUND', 'EXPIRED', 'DISABLED', 'NO_ACCESS'].includes(error.code)) {
-      await completeUpdate(updateId);
+    try {
+      await api.sendMessage({ chat_id: chatId, text: publicMessage(error), reply_markup: mainKeyboard });
+    } finally {
+      if (error instanceof FileLinkError && ['INVALID_STATE', 'NOT_FOUND', 'EXPIRED', 'DISABLED', 'NO_ACCESS'].includes(error.code)) {
+        await completeUpdate(updateId);
+      } else {
+        await releaseUpdate(updateId);
+      }
     }
   }
 }

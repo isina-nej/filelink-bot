@@ -1,5 +1,5 @@
 import { api } from 'sdk';
-import { claimUpdate, completeUpdate } from '../lib/idempotency.js';
+import { claimUpdate, completeUpdate, releaseUpdate } from '../lib/idempotency.js';
 import { rememberUser } from '../lib/users.js';
 import { disableFile, listOwnerFiles } from '../lib/files.js';
 import { getSession, moveToExpiry, setExpiryAndClaim, cancelSession, claimArchive } from '../lib/sessions.js';
@@ -130,9 +130,14 @@ export default async function callbackQueryHandler(query, ctx) {
     await completeUpdate(updateId);
   } catch (error) {
     logEvent('callback_error', { user_id: userId, operation: 'callback', status: 'failed', error_code: error.code || 'INTERNAL_ERROR' });
-    await answer(query.id, publicMessage(error));
-    if (error instanceof FileLinkError && ['INVALID_STATE', 'NOT_FOUND', 'EXPIRED', 'DISABLED', 'NO_ACCESS'].includes(error.code)) {
-      await completeUpdate(updateId);
+    try {
+      await answer(query.id, publicMessage(error));
+    } finally {
+      if (error instanceof FileLinkError && ['INVALID_STATE', 'NOT_FOUND', 'EXPIRED', 'DISABLED', 'NO_ACCESS'].includes(error.code)) {
+        await completeUpdate(updateId);
+      } else {
+        await releaseUpdate(updateId);
+      }
     }
   }
 }

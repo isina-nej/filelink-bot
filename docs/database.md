@@ -7,7 +7,8 @@
   caption entities, archive message id, token, status, expiry, timestamps, and
   delivery count.
 - `sessions`: one active versioned workflow per user.
-- `processed_updates`: unique update ids for webhook idempotency.
+- `processed_updates`: unique update ids with `PROCESSING`, `FAILED`, and
+  `COMPLETED` states for webhook idempotency and retry recovery.
 - `deliveries`: unique file/recipient and update records.
 - `rate_limits`: a short per-user request window.
 

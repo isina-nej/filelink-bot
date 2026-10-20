@@ -18,9 +18,9 @@ Upload flow:
 6. `/start <token>` calls `delivery.js`, checks status and expiry, copies the
    stored message, and records a delivery after success.
 
-Update idempotency uses a short processing lease and a separate `COMPLETED`
-state, so a failed invocation can be reclaimed while a duplicate in-flight
-invocation is ignored. Session/file changes use conditional updates and restore
+Update idempotency uses `PROCESSING`, `FAILED`, and `COMPLETED` states plus a
+short processing lease, so failed invocations can be retried while duplicates
+already in flight are ignored. Session/file changes use conditional updates and restore
 the previous Session stage when the companion file update cannot be applied.
 
 There is no process-global session state, worker, cron, HTTP server, or binary
